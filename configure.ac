@@ -95,26 +95,6 @@ if test "$enable_debugfile" = yes; then
    AC_DEFINE(USE_DEBUGFILE,1,[Output debugging into to a file in chroot.])
 fi
 
-
-AC_ARG_ENABLE(sqlite,
-[AC_HELP_STRING([--enable-sqlite], [Use SQLite for the database instead of flat text file.])],
-[], [])
-
-AC_ARG_WITH(sqlite-db,
-[AC_HELP_STRING([--with-sqlite-db=PATH], [Define the path and filename of the SQLite database.])],
-[dgl_sqlite_db=$withval; enable_sqlite=yes], [dgl_sqlite_db="/dgldir/dgamelaunch.db"])
-
-if test "$enable_sqlite" = yes; then
-   AC_MSG_RESULT([Using SQLite for the database, located at $dgl_sqlite_db])
-   AC_DEFINE(USE_SQLITE3,1,[Use SQLite for the database instead of flat text file.])
-   LIBS="$LIBS -lsqlite3"
-   AC_DEFINE_UNQUOTED(USE_SQLITE_DB, "$dgl_sqlite_db", [Path and filename of the SQLite database.])
-fi
-
-
-
-
-dgl_rlimit_core_default=157286400
 AC_ARG_WITH(rlimit-core,
 [AC_HELP_STRING([--with-rlimit-core=SIZE], [Enable and set the core dump maximum size.])],
 [dgl_rlimit_core=$withval; enable_rlimit=yes], [dgl_rlimit_core=$dgl_rlimit_core_default])
@@ -183,8 +163,33 @@ else
 fi
 
 
+AC_ARG_WITH(db-type,
+[AC_HELP_STRING([--with-db-type=TYPE], [Define the type of database to use (file, sqlite, postgresql).])],
+[dbtype=$withval], [dbtype="file"])
+
+if test "$dbtype" = file; then
+   AC_MSG_RESULT([Using file based database.])
+   AC_DEFINE(USE_DB,DB_FILE,[File])
+elif test "$dbtype" = sqlite; then
+   AC_MSG_RESULT([Using sqlite based database.])
+   AC_DEFINE(USE_DB,DB_SQLITE,[SQLite])
+   LIBS="$LIBS -lsqlite3"
+elif test "$dbtype" = postgresql; then
+   AC_MSG_RESULT([Using postgresql based database.])
+   AC_DEFINE(USE_DB,DB_POSTGRESQL,[PostgreSQL])
+   LIBS="$LIBS -lpq"
+else
+   AC_MSG_ERROR([Invalid value specified for db type])
+fi
+
+AC_ARG_WITH(db-path,
+[AC_HELP_STRING([--with-db-path=PATH], [Define the path or connection string for database.])],
+[dbpath=$withval], [dbpath=""])
+
+AC_DEFINE_UNQUOTED(DBPATH, "$dbpath", [Database path.])
 
 AC_SUBST(SETPROCTITLE_C)
 
 AC_CONFIG_FILES(Makefile)
 AC_OUTPUT
+

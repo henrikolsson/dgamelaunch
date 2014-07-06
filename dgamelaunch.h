@@ -34,6 +34,11 @@
 # define CLR_NORMAL  0
 # define CLR_RED     0
 #endif
+
+#define DB_FILE 0
+#define DB_SQLITE 1
+#define DB_POSTGRESQL 2
+    
 extern int color_remap[];
 
 typedef enum
@@ -123,7 +128,7 @@ struct dg_cmdpart
 
 struct dg_user
 {
-#ifdef USE_SQLITE3
+#if USE_DB != DB_FILE
     long id;
 #endif
   char *username;

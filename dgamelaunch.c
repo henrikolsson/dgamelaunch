@@ -62,8 +62,10 @@
 #include <curses.h>
 #include <locale.h>
 
-#ifdef USE_SQLITE3
+#if USE_DB == DB_SQLITE
 # include <sqlite3.h>
+#elif USE_DB == DB_POSTGRESQL
+# include <libpq-fe.h>
 #endif
 
 #ifndef __FreeBSD__
@@ -104,7 +106,7 @@ int  showplayers = 0;
 int  initplayer = 0;
 void (*g_chain_winch)(int);
 
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
 int f_num = 0;
 struct dg_user **users = NULL;
 #endif
@@ -150,7 +152,7 @@ cpy_me(struct dg_user *me)
     struct dg_user *tmp = malloc(sizeof(struct dg_user));
 
     if (tmp && me) {
-#ifdef USE_SQLITE3
+#if USE_DB != DB_FILE
 	tmp->id = me->id;
 #endif
 	if (me->username) tmp->username = strdup(me->username);
@@ -1724,7 +1726,7 @@ domailuser (char *username)
 void
 freefile ()
 {
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
   int i;
 
   /* free existing mem, clear existing entries */
@@ -1902,7 +1904,7 @@ newuser ()
 
   loggedin = 0;
 
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
   if (f_num >= globalconfig.max)
   {
       clear ();
@@ -2070,7 +2072,7 @@ passwordgood (char *cpw)
 int
 readfile (int nolock)
 {
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
   FILE *fp = NULL, *fpl = NULL;
   char buf[1200];
   struct flock fl = { 0 };
@@ -2192,7 +2194,7 @@ readfile (int nolock)
 
 /* ************************************************************* */
 
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
 struct dg_user *userexist_tmp_me = NULL;
 
 struct dg_user *
@@ -2219,7 +2221,7 @@ userexist (char *cname, int isnew)
 
   return NULL;
 }
-#else
+#elif USE_DB == DB_SQLITE
 
 struct dg_user *userexist_tmp_me = NULL;
 
@@ -2298,6 +2300,95 @@ userexist (char *cname, int isnew)
 
     return userexist_tmp_me;
 }
+#elif USE_DB == DB_POSTGRESQL
+
+struct dg_user *userexist_tmp_me = NULL;
+
+struct dg_user *
+userexist (char *cname, int isnew)
+{
+    char *errmsg = NULL;
+    int ret, retry = 10;
+    PGconn *conn;
+    char *qbuf;
+    int i,j;
+    PGresult *res;
+    char tmpbuf[DGL_PLAYERNAMELEN+2];
+    int num_rows, num_columns;
+    char *params[1];
+    int lengths[1];
+    int foo[1];
+    
+    memset(tmpbuf, 0, DGL_PLAYERNAMELEN+2);
+    strncpy(tmpbuf, cname, (isnew ? globalconfig.max_newnick_len : DGL_PLAYERNAMELEN));
+
+    /* Check that the nick doesn't interfere with already registered nicks */
+    if (isnew && (strlen(cname) >= globalconfig.max_newnick_len))
+	strcat(tmpbuf, "%");
+
+    conn = PQconnectdb(globalconfig.passwd);
+    debug_write(globalconfig.passwd);
+    if (PQstatus(conn) != CONNECTION_OK) {
+    PQfinish(conn);
+	debug_write("PQconnectdb failed");
+	graceful_exit(96);
+    }
+
+    if (userexist_tmp_me) {
+	free(userexist_tmp_me->username);
+	free(userexist_tmp_me->email);
+	free(userexist_tmp_me->env);
+	free(userexist_tmp_me->password);
+	free(userexist_tmp_me);
+	userexist_tmp_me = NULL;
+    }
+
+    params[0] = tmpbuf;
+    lengths[0] = strlen(tmpbuf);
+    foo[0] = 0;
+    
+    res = PQexecParams(conn,
+                       "select * from dglusers where username like $1 limit 1",
+                       1,
+                       NULL,
+                       &params,
+                       NULL,
+                       NULL,
+                       0);
+    if (PQresultStatus(res) == PGRES_FATAL_ERROR) {
+    PQclear(res);
+    PQfinish(conn);
+	debug_write("PQexecParams failed");
+	graceful_exit(108);
+    }
+
+    num_rows = PQntuples(res);
+    num_columns = PQnfields(res);
+    for(i=0;i<num_rows;i++)
+    {
+        userexist_tmp_me = malloc(sizeof(struct dg_user));
+        for (j=0;j<num_columns;j++)
+        {
+            if (!strcmp(PQfname(res, j), "username"))
+                userexist_tmp_me->username = strdup(PQgetvalue(res, i, j));
+            if (!strcmp(PQfname(res, j), "email"))
+                userexist_tmp_me->email = strdup(PQgetvalue(res, i, j));
+            if (!strcmp(PQfname(res, j), "env"))
+                userexist_tmp_me->env = strdup(PQgetvalue(res, i, j));
+            if (!strcmp(PQfname(res, j), "password"))
+                userexist_tmp_me->password = strdup(PQgetvalue(res, i, j));
+            if (!strcmp(PQfname(res, j), "flags"))
+                userexist_tmp_me->flags = atoi(PQgetvalue(res, i, j));
+            if (!strcmp(PQfname(res, j), "id"))
+                userexist_tmp_me->id = atoi(PQgetvalue(res, i, j));
+        }
+    }
+    
+    PQclear(res);
+    PQfinish(conn);
+
+    return userexist_tmp_me;
+}
 #endif
 
 /* ************************************************************* */
@@ -2353,7 +2444,7 @@ write_canned_rcfile (int game, char *target)
 
 /* ************************************************************* */
 
-#ifndef USE_SQLITE3
+#if USE_DB == DB_FILE
 void
 writefile (int requirenew)
 {
@@ -2440,7 +2531,7 @@ writefile (int requirenew)
 
   signals_release();
 }
-#else
+#elif USE_DB == DB_SQLITE
 void
 writefile (int requirenew)
 {
@@ -2474,6 +2565,13 @@ writefile (int requirenew)
 	graceful_exit(98);
     }
     sqlite3_close(db);
+}
+
+#elif USE_DB == DB_POSTGRESQL
+void
+writefile (int requirenew)
+{
+    /* FIXME */
 }
 #endif
 
