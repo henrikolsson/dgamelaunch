@@ -2571,7 +2571,74 @@ writefile (int requirenew)
 void
 writefile (int requirenew)
 {
-    /* FIXME */
+    PGconn *conn;
+    char *errmsg = NULL;
+    int ret, retry = 10;
+    int num_params = requirenew ? 5 : 6;
+    char *params[num_params];
+    int lengths[num_params];
+    int formats[num_params];
+    long id_be;
+    int flags_be;
+    char *query;
+    PGresult *res;
+    
+    conn = PQconnectdb(globalconfig.passwd);
+    debug_write(globalconfig.passwd);
+    if (PQstatus(conn) != CONNECTION_OK) {
+    PQfinish(conn);
+	debug_write("PQconnectdb failed");
+	graceful_exit(96);
+    }
+
+    
+    params[0] = me->username;
+    lengths[0] = strlen(params[0]);
+    formats[0] = 0;
+    
+    params[1] = me->email;
+    lengths[1] = strlen(params[1]);
+    formats[1] = 0;
+
+    me->env = "";
+    params[2] = me->env;
+    lengths[2] = strlen(params[2]);
+    formats[2] = 0;
+    
+    params[3] = me->password;
+    lengths[3] = strlen(params[3]);
+    formats[3] = 0;
+
+    flags_be = htonl(me->flags);
+    params[4] = (char *)&flags_be;
+    lengths[4] = sizeof(flags_be);
+    formats[4] = 1;
+    
+    if (!requirenew) {
+        id_be = htonl(me->id);
+        params[5] = (char *)&id_be;
+        lengths[5] = sizeof(id_be);
+        formats[5] = 1;
+        query = "update dglusers set username=$1, email=$2, env=$3, password=$4, flags=$5 where id=$6::bigint";
+    }
+    else {
+        query = "insert into dglusers (username, email, env, password, flags) values ($1,$2,$3,$4,$5)";
+    }
+
+    res = PQexecParams(conn,
+                       query,
+                       num_params,
+                       NULL,
+                       &params,
+                       &lengths,
+                       &formats,
+                       0);
+    if (PQresultStatus(res) == PGRES_FATAL_ERROR) {
+    PQclear(res);
+    PQfinish(conn);
+	debug_write("PQexecParams failed");
+	graceful_exit(108);
+    }
 }
 #endif
 
