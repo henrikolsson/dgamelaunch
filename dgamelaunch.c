@@ -2348,7 +2348,7 @@ userexist (char *cname, int isnew)
     foo[0] = 0;
     
     res = PQexecParams(conn,
-                       "select * from dglusers where username like $1 limit 1",
+                       "select * from dglusers where username ilike $1 limit 1",
                        1,
                        NULL,
                        &params,
